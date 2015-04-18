@@ -1,0 +1,7 @@
+[package]
+name = "rust-uri"
+version = "0.0.1"
+authors = ["Mark Chua <marklimuelchua@gmail.com>"]
+
+[dependencies.regex]
+regex = "0.1.28"
