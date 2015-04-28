@@ -12,11 +12,11 @@ struct Uri
 pub fn is_valid_scheme(scheme: &str) -> Result<(), String>
 {
     // For reference:
-    //
     // scheme      = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )
     if !scheme.starts_with(|c: char| is_ascii_alpha(c))
     {
-        return Err(format!("Scheme '{}' must start with as ASCII alpha character.", scheme))
+        let message = format!("Scheme '{}' must start as ASCII alpha character", scheme);
+        return Err(message)
     }
 
     let is_valid_scheme_token = |token: char| -> bool
@@ -30,7 +30,94 @@ pub fn is_valid_scheme(scheme: &str) -> Result<(), String>
 
     if scheme.contains(|c: char| !is_valid_scheme_token(c))
     {
-        return Err(format!("Scheme '{}' contains invalid token character.", scheme))
+        let message = format!("Scheme '{}' contains invalid token character", scheme);
+        return Err(message)
+    }
+
+    Ok(())
+}
+
+pub fn is_valid_authority(authority: &str) -> Result<(), String>
+{
+    let mut parts: Vec<&str> = authority.split('@').collect();
+    let (userinfo, rest) = if parts.len() == 2 { (parts[0], parts[1]) } else { ("", parts[0]) };
+    try!(is_valid_userinfo(userinfo));
+
+    let parts: Vec<&str> = rest.split(':').collect();
+    let (host, rest) = if parts.len() == 2 { (parts[1], parts[1]) } else { ("", parts[0]) };
+    try!(is_valid_host(host));
+
+    try!(is_valid_port(rest));
+
+    Ok(())
+}
+
+pub fn is_valid_userinfo(userinfo: &str) -> Result<(), String>
+{
+    // percent encoded are handled separately
+    let is_valid_userinfo_token = |token: char| -> bool
+    {
+        return is_unreserved(token)  ||
+               is_sub_delims(token)  ||
+               token == ':'
+    };
+
+    for (idx, token) in userinfo.chars().enumerate()
+    {
+        if token =='%' && !is_pct_encoded(&userinfo[idx..idx+2])
+        {
+            let message = format!("Userinfo contains bad percent encoded character");
+            return Err(message)
+        }
+        else if !is_valid_userinfo_token(token)
+        {
+            let message = format!("Userinfo '{}' contains invalid token character", token);
+            return Err(message)
+        }
+    }
+
+    Ok(())
+}
+
+pub fn is_valid_host(host: &str) -> Result<(), String>
+{
+    let is_valid_octet = |octet: &str| -> bool
+    {
+        match u8::from_str_radix(octet, 10)
+        {
+            Ok(num) if num >= 0 && num <= 255 => return true,
+            _                                 => return false,
+        }
+    };
+
+    // TODO: Add support for IP-literal and reg-name
+    let is_valid_ipv4_addr = |addr: &str| -> bool
+    {
+        let octets: Vec<&str> = addr.split('.').collect();
+
+        if octets.len() != 4
+        {
+            return false
+        }
+
+        octets.iter().all(|octect| is_valid_octet(*octect))
+    };
+
+    if !is_valid_ipv4_addr(host)
+    {
+        let message = format!("Host does not match any valid formats");
+        return Err(message)
+    }
+
+    Ok(())
+}
+
+pub fn is_valid_port(port: &str) -> Result<(), String>
+{
+    if !port.chars().all(|token| is_ascii_digit(token))
+    {
+        let message = format!("Port contains an invalid character.");
+        return Err(message)
     }
 
     Ok(())
@@ -70,15 +157,65 @@ fn get_uri_regex() -> Regex
     return Regex::new(URI_REGEX).unwrap()
 }
 
-fn is_ascii_alpha(token: char) -> bool {
+fn is_ascii_alpha(token: char) -> bool
+{
     // ALPHA       = (%41-%5A and %61-%7A)
     return (token >= 'A' && token <= 'Z') ||
            (token >= 'a' && token <= 'z')
 }
 
-fn is_ascii_digit(token: char) -> bool {
+fn is_ascii_digit(token: char) -> bool
+{
     // DIGIT       = (%30-%39)
     return token >= '0' && token <= '9'
+}
+
+fn is_unreserved(token: char) -> bool
+{
+    return is_ascii_alpha(token) ||
+           is_ascii_digit(token) ||
+           token == '-' ||
+           token == '.' ||
+           token == '_' ||
+           token == '~'
+}
+
+fn is_pct_encoded(line: &str) -> bool
+{
+    for (idx, token) in line.chars().enumerate()
+    {
+        if idx == 0 && token != '%'
+        {
+            return false
+        }
+        else if !is_hexadigit(token)
+        {
+            return false
+        }
+    }
+    true
+}
+
+fn is_sub_delims(token: char) -> bool
+{
+    return token == '!'  ||
+           token == '$'  ||
+           token == '&'  ||
+           token == '\'' ||
+           token == '('  ||
+           token == ')'  ||
+           token == '*'  ||
+           token == '+'  ||
+           token == ','  ||
+           token == ';'  ||
+           token == '='
+}
+
+fn is_hexadigit(token: char) -> bool
+{
+    return is_ascii_digit(token) ||
+           token >= 'a' && token <= 'f' ||
+           token >= 'A' && token <= 'F'
 }
 
 ///////////////////////////////////////////////////////////////////////////////
